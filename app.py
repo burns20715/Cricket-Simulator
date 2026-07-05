@@ -33,8 +33,9 @@ st.markdown("""
     }
     .stButton>button:hover { background-color: #2d6a4f; }
     .result-box {
-        background-color: #f0f7f0;
-        border-left: 4px solid #1a472a;
+        background-color: #1e1e1e;
+        color: #00ff88;
+        border-left: 4px solid #00ff88;
         padding: 15px;
         border-radius: 8px;
         margin: 10px 0;
@@ -51,7 +52,8 @@ st.markdown("""
         margin: 10px 0;
     }
     .voiceover-box {
-        background-color: #fff3cd;
+        background-color: #2a2a00;
+        color: #ffc107;
         border-left: 4px solid #ffc107;
         padding: 15px;
         border-radius: 8px;
