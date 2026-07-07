@@ -319,32 +319,53 @@ def get_player_row(name, df):
     return rows.iloc[0] if not rows.empty else None
 
 def build_batter_profile(row, fmt, venue_cond):
+    # T20 minimum strike rates by batting position type
+    T20_MIN_SR = {
+        "BAT": 125.0, "WK": 120.0, "ALL": 118.0,
+        "BOWL": 90.0,
+    }
+    ODI_MIN_SR = {
+        "BAT": 72.0, "WK": 70.0, "ALL": 68.0, "BOWL": 55.0,
+    }
+    ptype = str(row["type"])
+
     if fmt == "T20":
-        sr = float(row["bat_sr_t20"]) if row["bat_sr_t20"] > 0 else float(row["bat_sr_odi"]) * 1.1
-        avg = float(row["bat_avg_odi"]) * 0.65
+        sr_raw = float(row["bat_sr_t20"])
+        # If no T20I SR recorded, estimate from ODI SR * 1.25
+        if sr_raw <= 0:
+            sr_raw = float(row["bat_sr_odi"]) * 1.25
+        # Enforce minimums — nobody scores at <100 SR in T20
+        sr = max(sr_raw, T20_MIN_SR.get(ptype, 100.0))
+        avg = max(float(row["bat_avg_odi"]) * 0.6, 8.0)
     else:
-        sr = float(row["bat_sr_odi"])
-        avg = float(row["bat_avg_odi"])
+        sr_raw = float(row["bat_sr_odi"])
+        sr = max(sr_raw, ODI_MIN_SR.get(ptype, 60.0))
+        avg = max(float(row["bat_avg_odi"]), 8.0)
 
-    sr = max(sr, 40.0) * venue_cond["bat_mod"]
-    avg = max(avg, 8.0)
+    # Apply venue batting modifier
+    sr = sr * venue_cond["bat_mod"]
 
-    balls_faced = max((avg * 100) / max(sr, 1), 10)
-    four_rate = min(0.12, 0.06 * (sr / 80))
-    six_rate = min(0.08, 0.02 * (sr / 80))
-    wicket_prob = min(0.12, 1.0 / max(avg * (sr / 100), 5))
+    # Boundary rates — scale with SR
+    # At SR=150, expect ~15% fours, ~8% sixes
+    # At SR=80, expect ~8% fours, ~2% sixes
+    sr_factor = sr / 130.0  # normalise around T20 average
+    four_rate = min(0.18, max(0.06, 0.12 * sr_factor))
+    six_rate  = min(0.12, max(0.02, 0.06 * sr_factor))
 
-    remaining = max(1.0 - four_rate - six_rate - wicket_prob, 0.3)
+    # Wicket probability from average
+    # Lower average = higher risk per ball
+    wicket_prob = min(0.10, max(0.02, 1.0 / max(avg * (sr / 100.0), 8.0)))
+
+    remaining = max(1.0 - four_rate - six_rate - wicket_prob, 0.25)
     return {
-        "dot": max(remaining * 0.45, 0.01),
-        "1":   max(remaining * 0.40, 0.01),
-        "2":   max(remaining * 0.10, 0.01),
-        "3":   max(remaining * 0.05, 0.001),
-        "4":   max(four_rate, 0.02),
-        "6":   max(six_rate, 0.01),
-        "wicket": max(wicket_prob, 0.02),
+        "dot":    max(remaining * 0.38, 0.01),
+        "1":      max(remaining * 0.42, 0.01),
+        "2":      max(remaining * 0.12, 0.01),
+        "3":      max(remaining * 0.08, 0.001),
+        "4":      four_rate,
+        "6":      six_rate,
+        "wicket": wicket_prob,
         "name": row["name"], "avg": avg, "sr": sr,
-        "bowl_type": "pace" if row["type"] in ["BOWL","ALL"] else "bat",
     }
 
 def build_bowler_profile(row, fmt, venue_cond):
@@ -371,15 +392,30 @@ def build_bowler_profile(row, fmt, venue_cond):
 
     wicket_modifier = min(35.0 / max(econ * 4, 10), 2.5)
 
+    ptype = str(row["type"])
+    is_genuine_bowler = ptype in {"BOWL", "ALL"}
     return {
         "name": row["name"],
         "econ_modifier": econ_modifier,
-        "wicket_modifier": wicket_modifier,
+        "wicket_modifier": wicket_modifier if is_genuine_bowler else 0.1,
         "is_spinner": is_spinner,
+        "is_bowler": is_genuine_bowler,
     }
 
+# Hard list of known bowler types — belt and braces approach
+BOWL_TYPES = {"BOWL", "ALL"}
+
 def get_bowlers(xi, df):
-    return [p for p in xi if df[df["name"]==p]["type"].values[0] in ["BOWL","ALL"]]
+    """Only return genuine bowlers. Never pick BAT or WK types."""
+    bowlers = []
+    for p in xi:
+        rows = df[df["name"] == p]
+        if not rows.empty:
+            ptype = rows.iloc[0]["type"]
+            if ptype in BOWL_TYPES:
+                bowlers.append(p)
+    # Safety: if somehow < 4 bowlers, warn but don't add batters
+    return bowlers
 
 def simulate_ball(bat_p, bowl_p, pressure=1.0):
     weights = {o: bat_p[o] for o in OUTCOMES}
@@ -398,10 +434,16 @@ def simulate_ball(bat_p, bowl_p, pressure=1.0):
 def simulate_innings(batting_xi, bowling_xi, profiles, fmt, target=None):
     max_overs = 20 if fmt == "T20" else 50
     max_bowl_ovs = 4 if fmt == "T20" else 10
-    bowlers = [p for p in bowling_xi if profiles.get(p,{}).get("bowl",{}) and
-               profiles[p]["bowl"]["wicket_modifier"] > 0.5]
-    if len(bowlers) < 4:
-        bowlers = [p for p in bowling_xi if profiles.get(p)][:6]
+    # Only use genuine BOWL/ALL types — never BAT or WK
+    bowlers = [p for p in bowling_xi
+               if profiles.get(p, {}).get("bowl", {}).get("wicket_modifier", 0) > 0.5
+               and profiles.get(p, {}).get("bowl", {}).get("is_bowler", False)]
+    if len(bowlers) < 3:
+        # Fallback: use anyone with bowling stats but still prefer proper bowlers
+        bowlers = [p for p in bowling_xi
+                   if profiles.get(p, {}).get("bowl", {}).get("wicket_modifier", 0) > 0.3][:6]
+    if not bowlers:
+        bowlers = bowling_xi[6:]  # last resort — use lower order only
 
     runs=0; wickets=0; balls=0
     striker=batting_xi[0]; non_striker=batting_xi[1]; bat_idx=2
