@@ -617,45 +617,118 @@ st.divider()
 st.subheader("🏏 Team 1")
 t1_name = st.text_input("Team 1 Name", value="World Legends XI", key="t1_name")
 
-# Filter by nation option
-t1_nation = st.selectbox("Filter by nation (optional)", ["All Nations"] + nations, key="t1_nat")
-t1_pool = all_players if t1_nation == "All Nations" else df[df["nation"]==t1_nation]["name"].tolist()
-t1_pool = sorted(t1_pool)
+t1_method = st.radio("How to pick players?", ["📋 Paste names", "🔍 Search & select"], key="t1_method", horizontal=True)
 
-t1_xi = st.multiselect(
-    "Select 11 players for Team 1",
-    options=t1_pool,
-    max_selections=11,
-    key="t1_players",
-    help="Select exactly 11 players. Include at least 4 bowlers (BOWL or ALL type)."
-)
-if t1_xi:
-    t1_bowlers = [p for p in t1_xi if df[df["name"]==p]["type"].values[0] in ["BOWL","ALL"]]
-    st.caption(f"✅ {len(t1_xi)}/11 selected | Bowlers: {len(t1_bowlers)} ({', '.join(t1_bowlers[:3])}{'...' if len(t1_bowlers)>3 else ''})")
-    if len(t1_bowlers) < 4:
-        st.warning("⚠️ Add more bowlers (BOWL/ALL types)")
+if t1_method == "📋 Paste names":
+    st.caption("Paste all 11 player names separated by commas")
+    t1_paste = st.text_area(
+        "Team 1 Players",
+        placeholder="e.g. Sachin Tendulkar, Brian Lara, Shane Warne, ...",
+        height=100,
+        key="t1_paste"
+    )
+    t1_xi = []
+    if t1_paste.strip():
+        raw_names = [n.strip() for n in t1_paste.split(",")]
+        matched = []
+        unmatched = []
+        for name in raw_names:
+            if not name:
+                continue
+            # Exact match first
+            exact = df[df["name"].str.lower() == name.lower()]
+            if not exact.empty:
+                matched.append(exact.iloc[0]["name"])
+            else:
+                # Partial match
+                partial = df[df["name"].str.lower().str.contains(name.lower(), na=False)]
+                if not partial.empty:
+                    matched.append(partial.iloc[0]["name"])
+                else:
+                    unmatched.append(name)
+        t1_xi = matched
+        if unmatched:
+            st.error(f"⚠️ Not found: {', '.join(unmatched)}")
+        if t1_xi:
+            t1_bowlers = [p for p in t1_xi if df[df["name"]==p]["type"].values[0] in ["BOWL","ALL"]]
+            st.success(f"✅ {len(t1_xi)}/11 matched | Bowlers: {len(t1_bowlers)}")
+            st.caption(" | ".join(t1_xi))
+            if len(t1_bowlers) < 4:
+                st.warning("⚠️ Need at least 4 bowlers (BOWL/ALL types)")
+else:
+    t1_nation = st.selectbox("Filter by nation (optional)", ["All Nations"] + nations, key="t1_nat")
+    t1_pool = all_players if t1_nation == "All Nations" else df[df["nation"]==t1_nation]["name"].tolist()
+    t1_pool = sorted(t1_pool)
+    t1_xi = st.multiselect(
+        "Select 11 players for Team 1",
+        options=t1_pool,
+        max_selections=11,
+        key="t1_players",
+        help="Select exactly 11 players. Include at least 4 bowlers (BOWL or ALL type)."
+    )
+    if t1_xi:
+        t1_bowlers = [p for p in t1_xi if df[df["name"]==p]["type"].values[0] in ["BOWL","ALL"]]
+        st.caption(f"✅ {len(t1_xi)}/11 selected | Bowlers: {len(t1_bowlers)}")
+        if len(t1_bowlers) < 4:
+            st.warning("⚠️ Add more bowlers (BOWL/ALL types)")
 
 st.divider()
 
 st.subheader("🏏 Team 2")
 t2_name = st.text_input("Team 2 Name", value="Asian Legends XI", key="t2_name")
 
-t2_nation = st.selectbox("Filter by nation (optional)", ["All Nations"] + nations, key="t2_nat")
-t2_pool = all_players if t2_nation == "All Nations" else df[df["nation"]==t2_nation]["name"].tolist()
-t2_pool = sorted(t2_pool)
+t2_method = st.radio("How to pick players?", ["📋 Paste names", "🔍 Search & select"], key="t2_method", horizontal=True)
 
-t2_xi = st.multiselect(
-    "Select 11 players for Team 2",
-    options=t2_pool,
-    max_selections=11,
-    key="t2_players",
-    help="Select exactly 11 players. Include at least 4 bowlers (BOWL or ALL type)."
-)
-if t2_xi:
-    t2_bowlers = [p for p in t2_xi if df[df["name"]==p]["type"].values[0] in ["BOWL","ALL"]]
-    st.caption(f"✅ {len(t2_xi)}/11 selected | Bowlers: {len(t2_bowlers)} ({', '.join(t2_bowlers[:3])}{'...' if len(t2_bowlers)>3 else ''})")
-    if len(t2_bowlers) < 4:
-        st.warning("⚠️ Add more bowlers (BOWL/ALL types)")
+if t2_method == "📋 Paste names":
+    st.caption("Paste all 11 player names separated by commas")
+    t2_paste = st.text_area(
+        "Team 2 Players",
+        placeholder="e.g. Virat Kohli, MS Dhoni, Jasprit Bumrah, ...",
+        height=100,
+        key="t2_paste"
+    )
+    t2_xi = []
+    if t2_paste.strip():
+        raw_names = [n.strip() for n in t2_paste.split(",")]
+        matched = []
+        unmatched = []
+        for name in raw_names:
+            if not name:
+                continue
+            exact = df[df["name"].str.lower() == name.lower()]
+            if not exact.empty:
+                matched.append(exact.iloc[0]["name"])
+            else:
+                partial = df[df["name"].str.lower().str.contains(name.lower(), na=False)]
+                if not partial.empty:
+                    matched.append(partial.iloc[0]["name"])
+                else:
+                    unmatched.append(name)
+        t2_xi = matched
+        if unmatched:
+            st.error(f"⚠️ Not found: {', '.join(unmatched)}")
+        if t2_xi:
+            t2_bowlers = [p for p in t2_xi if df[df["name"]==p]["type"].values[0] in ["BOWL","ALL"]]
+            st.success(f"✅ {len(t2_xi)}/11 matched | Bowlers: {len(t2_bowlers)}")
+            st.caption(" | ".join(t2_xi))
+            if len(t2_bowlers) < 4:
+                st.warning("⚠️ Need at least 4 bowlers (BOWL/ALL types)")
+else:
+    t2_nation = st.selectbox("Filter by nation (optional)", ["All Nations"] + nations, key="t2_nat")
+    t2_pool = all_players if t2_nation == "All Nations" else df[df["nation"]==t2_nation]["name"].tolist()
+    t2_pool = sorted(t2_pool)
+    t2_xi = st.multiselect(
+        "Select 11 players for Team 2",
+        options=t2_pool,
+        max_selections=11,
+        key="t2_players",
+        help="Select exactly 11 players. Include at least 4 bowlers (BOWL or ALL type)."
+    )
+    if t2_xi:
+        t2_bowlers = [p for p in t2_xi if df[df["name"]==p]["type"].values[0] in ["BOWL","ALL"]]
+        st.caption(f"✅ {len(t2_xi)}/11 selected | Bowlers: {len(t2_bowlers)}")
+        if len(t2_bowlers) < 4:
+            st.warning("⚠️ Add more bowlers (BOWL/ALL types)")
 
 st.divider()
 
